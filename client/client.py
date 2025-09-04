@@ -4,8 +4,56 @@ import threading
 import datetime
 import time
 import json
+import uuid
+from Crypto.PublicKey import RSA
 
-def envio_leilao():
+def getCustomerData() -> dict:
+    client = {}
+    client['name'] = str(input("Digite o nome do cliente: "))
+    # TODO Verificar se o nome é valido
+
+    client['ID'] = str(uuid.uuid4())
+
+    return client
+
+def createdKeys(ID: str):
+
+    # Criando as pastas para colocar as chaves
+    folder_name = 'keys'
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
+        print("Criado a pasta keys para o client")
+    
+    if not os.path.exists(folder_name + f"/{ID}"):
+        os.makedirs(folder_name + f"/{ID}")
+        print(f"Criado a pasta keys/{ID} para o client")
+
+    if not os.path.exists(f"../microservices/{folder_name}"):
+        os.makedirs(f"../microservices/{folder_name}")
+        print(f"Criado a pasta keys no microservices")
+
+    if not os.path.exists(f"../microservices/{folder_name}/{ID}"):
+        os.makedirs(f"../microservices/{folder_name}/{ID}")
+        print(f"Criado a pasta {ID} no microservices/keys")
+
+    # Gerando as chaves publicas e privadas
+    key = RSA.generate(2048)
+    private_key = key.export_key()
+    public_key = key.publickey().export_key()
+
+    with open(f"./keys/{ID}/private_key.der", "wb") as file:
+        file.write(private_key)
+
+    #with open(f"../microservices/keys/{ID}/private_key.der", "wb") as file:
+    #    file.write(private_key)
+
+    with open(f"./keys/{ID}/public_key.der", "wb") as f:
+        f.write(public_key)
+
+    with open(f"../microservices/keys/{ID}/public_key.der", "wb") as file:
+        file.write(public_key)
+
+def envio_leilao(client: dict):
     time.sleep(3)
     broker_IP = 'localhost'
     address = rabbit.ConnectionParameters(broker_IP)
@@ -16,7 +64,7 @@ def envio_leilao():
     package = {}
     data_inicio = datetime.datetime.now()
     data_fim = data_inicio + + datetime.timedelta(hours=2)
-    package['name'] = 'Fernando'
+    package['name'] = client['name']
     package['descrição'] = 'Leilao do meu coração'
     package['data_inicio'] = data_inicio.strftime("%d/%m/%Y %H:%M:%S")
     package['data_fim'] = data_fim.strftime("%d/%m/%Y %H:%M:%S")
@@ -36,7 +84,7 @@ def envio_leilao():
 def callback_leilao_inicializado(ch, method, properties, body: bytes):
     print(body.decode('utf-8'))
 
-def main():
+def main(client: dict):
     broker_IP = 'localhost'
     address = rabbit.ConnectionParameters(broker_IP)
     connection = rabbit.BlockingConnection(address)
@@ -64,8 +112,14 @@ def main():
 
 if __name__ == '__main__':
     try:
-        t1 = threading.Thread(target=main)
-        t2 = threading.Thread(target=envio_leilao)
+        # Obtendo as informações iniciais do cliente
+        client = getCustomerData()
+
+        # Criação das chaves publicas e privadas
+        createdKeys(client['ID'])
+
+        t1 = threading.Thread(target=main, args=(client,))
+        t2 = threading.Thread(target=envio_leilao, args=(client,))
         t1.start()
         t2.start()
         t1.join()
