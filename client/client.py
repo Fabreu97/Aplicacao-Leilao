@@ -63,9 +63,9 @@ def envio_leilao(client: dict):
     # Construção do pacote para requisição
     package = {}
     data_inicio = datetime.datetime.now()
-    data_fim = data_inicio + + datetime.timedelta(hours=2)
+    data_fim = data_inicio + datetime.timedelta(hours=2)
     package['name'] = client['name']
-    package['descrição'] = 'Leilao do meu coração'
+    package['descricao'] = 'Leilao do meu coração'
     package['data_inicio'] = data_inicio.strftime("%d/%m/%Y %H:%M:%S")
     package['data_fim'] = data_fim.strftime("%d/%m/%Y %H:%M:%S")
     request = json.dumps(package)
