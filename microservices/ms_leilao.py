@@ -2,20 +2,39 @@ import sys, os
 import pika as rabbit
 import json
 import uuid
+import datetime
+import threading
+
+# Função executada para enviar o fim do leilao na fila lance_
+def endOfAudictionSchedule(message, channel):
+    channel.basic_publish(
+        exchange='direct_leilao',
+        routing_key='leilao_finalizado',
+        body=message
+    )
 
 def callback_solicitacao_de_leilao(ch, method, properties, body: bytes):
     data = json.loads(body.decode('utf-8'))
+
     # nome
     # descrição
     # data_inicio
     # data_fim
-
-    # Verificar se a solicitação é valida
+    # assinatura
+    # TODO Verificar se a solicitação é valida
+    #   -   Assinatura do cliente
+    #   -   Tempo de fim é maior que inicio
+    #   -   Tempo de fim é maior que horario atual
 
     # Gerar um UUID e status ativo se for valido
     data['ID'] = str(uuid.uuid4())
     data['status'] = 'ativo'
     
+    # Agendar o envio da mensagem de leilao_finalizado
+    end_time = datetime.datetime.strptime(data['data_fim'], "%d/%m/%Y %H:%M:%S")
+    threading.Timer(end_time, endOfAudictionSchedule, args=(data['ID'], ch)).start()
+
+
     # enviar pacote do leilao para todos os clientes
     message = json.dumps(data)
 
@@ -24,6 +43,7 @@ def callback_solicitacao_de_leilao(ch, method, properties, body: bytes):
         routing_key='',
         body=message
     )
+
 
 def main():
     broker_IP = 'localhost'
@@ -37,9 +57,11 @@ def main():
 
     # Declaração das Filas
     channel.queue_declare(queue='solicitacao_leilao', exclusive=False)
+    channel.queue_declare(queue='leilao_finalizado', exclusive=False)
 
     # Vinculação das Filas
     channel.queue_bind(queue='solicitacao_leilao', exchange='direct_leilao', routing_key='solicitacao_leilao')
+    channel.queue_bind(queue='leilao_finalizado', exchange='direct_leilao', routing_key='leilao_finalizado')
 
     # Quais filas seram consumidas
     channel.basic_consume(
