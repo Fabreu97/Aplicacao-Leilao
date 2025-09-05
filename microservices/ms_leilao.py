@@ -5,7 +5,7 @@ import uuid
 import datetime
 import threading
 
-# Função executada para enviar o fim do leilao na fila lance_
+# Função executada para enviar o fim do leilao na fila lance_finalizado
 def endOfAudictionSchedule(message, channel):
     channel.basic_publish(
         exchange='direct_leilao',
@@ -25,6 +25,7 @@ def callback_solicitacao_de_leilao(ch, method, properties, body: bytes):
     #   -   Assinatura do cliente
     #   -   Tempo de fim é maior que inicio
     #   -   Tempo de fim é maior que horario atual
+    now = datetime.datetime.now()
 
     # Gerar um UUID e status ativo se for valido
     data['ID'] = str(uuid.uuid4())
@@ -32,7 +33,8 @@ def callback_solicitacao_de_leilao(ch, method, properties, body: bytes):
     
     # Agendar o envio da mensagem de leilao_finalizado
     end_time = datetime.datetime.strptime(data['data_fim'], "%d/%m/%Y %H:%M:%S")
-    threading.Timer(end_time, endOfAudictionSchedule, args=(data['ID'], ch)).start()
+    waiting_time = (end_time - now).total_seconds()
+    threading.Timer(waiting_time, endOfAudictionSchedule, args=(data['ID'], ch)).start()
 
 
     # enviar pacote do leilao para todos os clientes
