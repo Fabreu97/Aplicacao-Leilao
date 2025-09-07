@@ -6,12 +6,18 @@ import datetime
 import threading
 
 # Função executada para enviar o fim do leilao na fila lance_finalizado
-def endOfAudictionSchedule(message, channel):
+def endOfAudictionSchedule(message):
+    connection = rabbit.BlockingConnection(rabbit.ConnectionParameters('localhost'))
+    channel = connection.channel()
+    channel.exchange_declare(exchange='direct_leilao', exchange_type='direct')
+
     channel.basic_publish(
         exchange='direct_leilao',
         routing_key='leilao_finalizado',
         body=message
     )
+
+    connection.close()
 
 def callback_solicitacao_de_leilao(ch, method, properties, body: bytes):
     data = json.loads(body.decode('utf-8'))
@@ -34,11 +40,11 @@ def callback_solicitacao_de_leilao(ch, method, properties, body: bytes):
     # Agendar o envio da mensagem de leilao_finalizado
     end_time = datetime.datetime.strptime(data['data_fim'], "%d/%m/%Y %H:%M:%S")
     waiting_time = (end_time - now).total_seconds()
-    threading.Timer(waiting_time, endOfAudictionSchedule, args=(data['ID'], ch)).start()
+    threading.Timer(waiting_time, endOfAudictionSchedule, args=(data['ID'])).start()
 
 
     # enviar pacote do leilao para todos os clientes
-    message = json.dumps(data)
+    message = json.dumps(data, sort_keys=True)
 
     ch.basic_publish(
         exchange='fanout_leilao',
