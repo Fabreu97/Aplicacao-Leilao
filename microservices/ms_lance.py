@@ -6,8 +6,13 @@ from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 
+LEILAO_INICIALIZADO = 0
+LEILAO_FINALIZADO = 2
+LANCE_VALIDO = 3
+LANCE_MENOR = 4
+
 leiloes_ativos = {}
-    # ID
+    # ID_leilao
     # nome
     # descrição
     # data_inicio
@@ -21,7 +26,7 @@ keys = {} # cache
 
 def callback_leilao_inicializado(ch, method, properties, body: bytes):
     data = json.loads(body.decode('utf-8')) # bytes -> str -> dict
-    # ID
+    # ID_leilao
     # nome
     # descrição
     # data_inicio
@@ -29,10 +34,10 @@ def callback_leilao_inicializado(ch, method, properties, body: bytes):
     # status
 
     # Adicionei o leilao incializados aos leiloes ativos
-    leiloes_ativos[data['ID']] = data
+    leiloes_ativos[data['ID_leilao']] = data
     print("********************************")
     print("Recebido Leilao Iniciado")
-    print(f"ID = {data['ID']}")
+    print(f"ID = {data['ID_leilao']}")
     print("********************************")
 
 
@@ -42,7 +47,7 @@ def callback_lance_realizado(ch, method, properties, body: bytes):
     # lance
     # assinatura
 
-    pack = json.loads(body.decode('utf-8').strip()) # bytes -> str -> dict
+    pack = json.loads(body.decode('utf-8')) # bytes -> str -> dict
     print(f"Lance recebido: {body.decode('utf-8')}")
     # Verificação se o leilão existe
     if not pack['ID_leilao'] in leiloes_ativos:
@@ -78,49 +83,71 @@ def callback_lance_realizado(ch, method, properties, body: bytes):
     if not 'lance' in leilao:
         leilao['lance'] = pack['lance']
         leilao['ID_usuario'] = pack['ID_usuario']
+        pack['type'] = LANCE_VALIDO
     else:
         if(pack['lance'] <= leilao['lance']):
-            print("Lance Inválido: Lance menor ao maior lance em vigor.")
-            return
-        leilao['lance'] = pack['lance']
-        leilao['ID_usuario'] = pack['ID_usuario']
+            print("Lance Status: Lance menor ao maior lance em vigor.")
+            pack['type'] = LANCE_MENOR
+        else:
+            leilao['lance'] = pack['lance']
+            leilao['ID_usuario'] = pack['ID_usuario']
+            pack['type'] = LANCE_VALIDO
     print("********************************")
     print("Lance Valido: ")
     print(f"Leilao: {leilao['nome']}")
     print(f"Usuario: {pack['ID_usuario']}")
     print(f"Lance: {pack['lance']}")
     print("********************************")
+
+
     # Lance é válido, portanto deve comunicar ms_notificacao
+    # ID_leilao
+    # ID_usuario
+    # lance
+    # type
+
+    pack_str = json.dumps(pack, sort_keys=True)
+
     ch.basic_publish(
         exchange='direct_lance',
         routing_key='lance_valido',
-        body=message.decode('utf-8') # bytes -> str
+        body=pack_str
     )
 
 def callback_leilao_finalizado(ch, method, properties, body: bytes):
     # Só tem o ID do leilao
     # remover o leilao dos leiloes ativos
     message = {}
-    leilao: dict = leiloes_ativos[body.decode('utf-8')]
     message['ID_leilao'] = body.decode('utf-8')
-    message['ID_usuario'] = leilao['ID_usuario']
-    message['lance'] = leilao['lance']
-    message = json.dumps(message, sort_keys=True)
-    print("********************************")
-    print("Leilao Finalizado: ")
-    print(f"Leilao: {leilao['ID']}")
-    print(f"Leilao: {leilao['nome']}")
-    if 'lance' in leilao:
-        print(f"ID vencedor: {leilao['ID_usuario']}")
-        print(f"Valor do Lance vencedor: {leilao['lance']}")
-    
+    message['status'] = "Finalizado"
+    message['type'] = LEILAO_FINALIZADO
+    if body.decode('utf-8') in leiloes_ativos:
+        leilao: dict = leiloes_ativos[body.decode('utf-8')] or {}
+        print("********************************")
+        print("Leilao Finalizado: ")
+        print(f"ID: {leilao['ID_leilao']}")
+        print(f"Nome: {leilao['nome']}")
+        if 'lance' in leilao:
+            message['status'] = "Finalizado" + "sem vencedor"
+            message['ID_usuario'] = leilao['ID_usuario']
+            message['lance'] = leilao['lance']
+            print(f"ID vencedor: {leilao['ID_usuario']}")
+            print(f"Valor do Lance vencedor: {leilao['lance']}")
+    else:
+        print("Leilao não existe . . .")
+        del leiloes_ativos[body.decode('utf-8')]
 
-    del leiloes_ativos[body.decode('utf-8')]
+    message = json.dumps(message, sort_keys=True)
+
     # enviar o vencedor do leilao
+    # ID_leilao
+    # ID_usuario
+    # lance
+    # type
     ch.basic_publish(
         exchange='direct_lance',
         routing_key='leilao_vencedor',
-        auto_ack=True
+        body=message
     )
 
 def main():
@@ -168,35 +195,10 @@ def main():
     print("Inicialização do consumo da fila: lance realizado . . .")
     print("Inicialização do consumo da fila: lance finalizado . . .")
     channel.start_consuming()
-
-def createKeys():
-
-    # Verificando se as pastas existem e, caso contrario, criada as pastas
-    if not os.path.exists("./keys/backend"):
-        os.makedirs("./keys/backend")
-        print("Criado as pastas 'keys' e 'backends' para os microservices")
-
-    if not os.path.exists("../client/keys/backend"):
-        os.makedirs("../client/keys/backend")
-
-    # Gerando as chaves publicas e privadas
-    key = RSA.generate(2048)
-    private_key = key.export_key()
-    public_key = key.publickey().export_key()
     
-    # Salvando as keys
-    with open(f"./keys/backend/private_key.der", "wb") as file:
-        file.write(private_key)
-
-    with open(f"./keys/backend/public_key.der", "wb") as file:
-        file.write(public_key)
-
-    with open(f"../client/keys/backend/public_key.der", "wb") as file:
-        file.write(public_key)
 
 if __name__ == '__main__':
     try:
-        createKeys()
         main()
     except KeyboardInterrupt:
         try:

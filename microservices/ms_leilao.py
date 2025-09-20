@@ -5,6 +5,9 @@ import uuid
 import datetime
 import threading
 
+LEILAO_INICIALIZADO = 0
+LEILAO_FINALIZADO = 2
+
 # Função executada para enviar o fim do leilao na fila lance_finalizado
 def endOfAudictionSchedule(message):
     connection = rabbit.BlockingConnection(rabbit.ConnectionParameters('localhost'))
@@ -17,30 +20,39 @@ def endOfAudictionSchedule(message):
         body=message
     )
 
+    print('*' * 22)
+    print(f"Leilao com ID {message} finalizado . . .")
     connection.close()
 
 def callback_solicitacao_de_leilao(ch, method, properties, body: bytes):
     data = json.loads(body.decode('utf-8'))
 
     # nome
-    # descrição
+    # descricao
     # data_inicio
     # data_fim
-    # assinatura
-    # TODO Verificar se a solicitação é valida
-    #   -   Assinatura do cliente
-    #   -   Tempo de fim é maior que inicio
-    #   -   Tempo de fim é maior que horario atual
+    # type
+
     now = datetime.datetime.now()
+    print('*' * 22)
+    print(f"Recebido a solicitação de um leilao")
+    print(f"Nome: {data['nome']}")
+    print(f"Descrição: {data['descricao']}")
+    print(f"Data de Inicio: {data['data_inicio']}")
+    print(f"Data de Fim: {data['data_fim']}")
 
     # Gerar um UUID e status ativo se for valido
-    data['ID'] = str(uuid.uuid4())
+    data['ID_leilao'] = str(uuid.uuid4())
     data['status'] = 'ativo'
+    data['type'] = LEILAO_INICIALIZADO
+    
+    print(f"ID: {data['ID_leilao']}")
+    print(f"Status: {data['status']}")
     
     # Agendar o envio da mensagem de leilao_finalizado
     end_time = datetime.datetime.strptime(data['data_fim'], "%d/%m/%Y %H:%M:%S")
     waiting_time = (end_time - now).total_seconds()
-    threading.Timer(waiting_time, endOfAudictionSchedule, args=(data['ID'])).start()
+    threading.Timer(waiting_time, endOfAudictionSchedule, args=(data['ID_leilao'], )).start()
 
 
     # enviar pacote do leilao para todos os clientes
